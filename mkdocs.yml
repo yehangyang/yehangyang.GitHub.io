@@ -1,7 +1,6 @@
 site_name: My Notebook
 nav:
     - 查表法量化激活函数: activation_function_quantization_via_table.md
-    - FP8: fp8.md
     - 术语: term.md
 
 theme:
