@@ -1,12 +1,11 @@
 site_name: My Notebook
 nav:
-    - 查表法量化激活函数: activation_function_quantization_via_table.md
-    - FP8: fp8.md
-    - 术语: term.md
+  - 查表法量化激活函数: activation_function_quantization_via_table.md
+  - 术语: term.md
 
 theme:
-    name: material
-    palette:
+  name: material
+  palette:
     - scheme: default
       primary: indigo
       accent: indigo
@@ -20,17 +19,17 @@ theme:
         icon: material/weather-night
         name: Switch to light mode
 
-    font:
-      text: Roboto
-      code: Roboto Mono
+  font:
+    text: Roboto
+    code: Roboto Mono
 
-    features:
+  features:
     - navigation.tabs
     - navigation.tabs.sticky
 
 markdown_extensions:
-    - pymdownx.arithmatex:
-        generic: true
+  - pymdownx.arithmatex:
+      generic: true
 
 extra_javascript:
   - javascripts/mathjax.js
