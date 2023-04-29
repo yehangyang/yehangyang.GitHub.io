@@ -31,7 +31,7 @@
 * L23~L25 表示（b）的虚线框过程，量化结果为ground_truth_quant_output。
 * L28 是元素比较，quant_output应该与ground_truth_quant_output完全相等。
 
-```python
+```python linenums="1"
 def __check_symmetric_quant(quant_cls: _SymmetryQuant, float_func: Callable, input_amax: float, bit: int,
                             narrow: bool) -> bool:
     """Check whether the output of quant_cls is correct
@@ -74,7 +74,7 @@ def __check_symmetric_quant(quant_cls: _SymmetryQuant, float_func: Callable, inp
 * L21～L33：生成映射表 table 的代码（在__init__函数中可见）
 * L36：前向推理时的查表过程
 
-```python
+```python linenums="1"
 class _SymmetryQuant(torch.nn.Module):
 
     def __init__(self,
@@ -275,7 +275,7 @@ $$
 
 代码地址
 
-```python
+```python linenums="1"
 class Softmax(torch.nn.Module):
 
     def __init__(self,
@@ -348,7 +348,7 @@ class Softmax(torch.nn.Module):
 
 测试代码和测试设计中提到的会有所不同。因为 Softmax 不是简单查表就能实现的，过程中存在累加和除法，所以存在无法避免的误差。在测试代码中，将量化输出的最大绝对值误差（max absolute error）限定在 1 以内（包括 1），也就是等价浮点输出误差在 output_quant_scale 以内，对应代码块 L19。
 
-```python
+```python linenums="1"
 def _check_symmetric_quant_table_softmax(dim_len_range: Tuple[int],
                                          input_bit_range: Tuple[int],
                                          input_amax_range: Tuple[float],
