@@ -1,4 +1,5 @@
 site_name: My Notebook
+site_url: https://yehangyang.github.io/
 
 theme:
     name: material
