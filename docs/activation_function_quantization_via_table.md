@@ -2,8 +2,7 @@
 
 ## 前言
 
-本文将讲述基于查表法来实现激活函数的量化。
-关于“口嗨版”的说明：因为没有实际负载的实现，所以标注为“口嗨版”。当然后续会抽空做实际负载的实验（目标是 Transformer），争取早日抹掉这个标注。不过实现的单个量化算子，都提供了测试用例且均通过。
+本文将讲述基于查表法来实现激活函数的量化。因为目前没有实际负载的实现，所以标注为“口嗨版”。当然后续会抽空做实际负载的实验（目标是 Transformer），争取早日抹掉这个标注。不过实现的单个量化算子，都提供了测试用例。
 项目地址：<https://github.com/yehangyang/Activation_Function_Quantization>
 
 ## 动机
@@ -14,7 +13,7 @@
 
 ![half quantization v.s. full quantizaiton](activation_function_quantization_via_table/half_vs_full.drawio.svg)
 
-观察上图（b），nonlinear 的输出会再次被量化，作为下一个量化 linear 的输入。细想，量化其实同时在边界上和数量上限制了表示范围。以 int8 量化为例，linear 输出的 X 取值范围是 [-128, +127]（边界限制），可由 256 个数表示（数量限制）。此时如果 nonlinear 由浮点实现，则 X 需要被反量化（x' = scale_x · X），才能作为浮点 nonlinear 的输入。请不要以为做了反量化变成浮点数了，x' 的边界和数量限制就解除了，它仍旧被限制在 [-128scale_x, +127scale_x]，数值表示数量为 256 不变（并且可以和反量化前一一对应）。在浮点域做完 nonlinear 之后，y = nonlinear(x')，限制仍然存在（仍然保持一一对应）。为了能成为下一个量化 linear 的输入，需要对 y 量化，Y = [y / sy]，限制依旧在（一一对应）。费劲周章，最后得到的还是 256 种数值结果，所以我们为什么不借助“一一对应”的传递性，用查表法来得到 nonlinear 的量化结果呢？
+观察上图（b），nonlinear 的输出会再次被量化，作为下一个量化 linear 的输入。细想，量化其实同时在边界上和数量上限制了表示范围。以 int8 量化为例，linear 输出的 $X \in [-128, +127]$（边界限制），可由 256 个数表示（数量限制）。此时如果 nonlinear 由浮点实现，则 $X$ 需要被反量化（$x' = scale_x · X$），才能作为浮点 nonlinear 的输入。请不要以为做了反量化变成浮点数了，$x'$ 的边界和数量限制就解除了，它仍旧被限制在 $[-128scale_x, +127scale_x]$，数值表示数量为 256 不变（并且可以和反量化前一一对应）。在浮点域做完 nonlinear 之后，$y = nonlinear(x')$，限制仍然存在（仍然保持一一对应）。为了能成为下一个量化 linear 的输入，需要对 $y$ 量化，$Y = [\frac {y} {scale_y}]$，限制依旧在（一一对应）。费劲周章，最后得到的还是 256 种数值结果，所以我们为什么不借助“一一对应”的传递性，用查表法来得到 nonlinear 的量化结果呢？
 
 总结一下，我们的动机是希望通过量化非线性激活函数来实现全模型的量化（上图（b）到上图（c）的转变），并且根据分析是可以通过查表法来实现量化非线性激活函数，且可以保证无误差。
 
@@ -145,22 +144,22 @@ $$
 y_i = \frac{e^{x_i}}{\sum_{i}^{n} e^{x_i}} = \frac{e^{x_i - offset}}{\sum_{i}^{n} e^{x_i-offset}}, offset = \max_{i \in n}(x_i)
 $$
 
-随后将问题拆解为如何得到 $e^{x - \max_{i \in n}(x_i)}$。代入量化的表达式 $x_i = scale_x * X_i$，得，
+随后将问题拆解为如何得到 $e^{x_i - \max_{i \in n}(x_i)}$。代入量化的表达式 $x_i = scale_x X_i$，得，
 
 $$
-e^{scale_x * X_i - \max_{i \in n}(scale_x * X_i)} = e^{scale_x(X_i - \max_{i \in n}(X_i))}
+e^{scale_x X_i - \max_{i \in n}(scale_x X_i)} = e^{scale_x(X_i - \max_{i \in n}(X_i))}
 $$
 
 对于 $X$（量化 tensor）而言，
 
 $$
-\max_{i \in n}(X_i) \le Q_{max}, i.e., scale_x * \max_{i \in n}(X_i) \le scale_x * Q_{max}
+\max_{i \in n}(X_i) \le Q_{max}, i.e., scale_x \max_{i \in n}(X_i) \le scale_x Q_{max}
 $$
 
-于是将 $offset$ 设定为 $scale_x * Q_{max}$，等价变化仍然成立，同时避免求和时发生数据溢出。即，
+于是将 $offset$ 设定为 $scale_x Q_{max}$，等价变化仍然成立，同时避免求和时发生数据溢出。即，
 
 $$
-y_i = \frac {e^{scale_x * X_i - scale_x * Q_{max}}}{\sum_{i}^{n}e^{scale_x * X_i - scale_x * Q_{max}}} = \frac {e^{scale_x * (X_i - Q_{max})}} {\sum_{i}^{n} e^{scale_x * (X_i - Q_{max})}}
+y_i = \frac {e^{scale_x X_i - scale_x Q_{max}}}{\sum_{i}^{n}e^{scale_x X_i - scale_x Q_{max}}} = \frac {e^{scale_x (X_i - Q_{max})}} {\sum_{i}^{n} e^{scale_x (X_i - Q_{max})}}
 $$
 
 $$
@@ -172,28 +171,28 @@ $$
 #### 确定分母映射表
 
 我的目标是实现 softmax 的全量化，所以也会对 $t_i$ 做量化，在整数域进行计算。
-为了能实现对 $t_i$ 做量化，目前缺少的条件是 $t_i$ 输出的量化 $scale$ 值。于是这一小节将推演如何确定 $t_i$ 的输出量化 $scale$。根据前面的推演，简化公式，并带入 $t_i$ 的量化表达 $t_i = scale_t * T_i$，化简如下，
+为了能实现对 $t_i$ 做量化，目前缺少的条件是 $t_i$ 输出的量化 $scale$ 值。于是这一小节将推演如何确定 $t_i$ 的输出量化 $scale$。根据前面的推演，简化公式，并带入 $t_i$ 的量化表达 $t_i = scale_t T_i$，化简如下，
 
 $$
-y_i = \frac {t_i} {\sum_{i}^{n} t_i} = \frac {scale_t * T_i} {\sum_{i}^{n} scale_t * T_i} = \frac {T_i} {\sum_{i}^{n}T_i}
+y_i = \frac {t_i} {\sum_{i}^{n} t_i} = \frac {scale_t T_i} {\sum_{i}^{n} scale_t T_i} = \frac {T_i} {\sum_{i}^{n}T_i}
 $$
 
 至此证明 $t_i$ 的量化输出可以直接用于计算，i.e., 可以在整数域进行累加和除法操作。
 
-接下来要确定 $scale_t$ 的取值。在确定 $scale_t$ 的取值时，需要结合硬件的整数累加器来考虑。看到整数累加，通常会引起做量化同学的警惕。累加结果（包括中间结果）会被存到硬件的累加器（$acc$）中。而累加器位宽（$bit_{acc}$）通常都是固定的。位宽固定，累加的上限也就确定，令其为 $acc_{qmax} = 2^{bit_{acc} - 1} - 1$，在 softmax 这个场景中，甚至可以用无符号表示，因为 $T$ 肯定大于零。$T$ 的每个元素值大小是千变万化的，$T$ 的元素个数 $n$ 是可以确定的。根据 $acc_{qmax}$ 和 $n$，可以作以下约束，
+接下来要确定 $scale_t$ 的取值。在确定 $scale_t$ 的取值时，需要结合硬件的整数累加器来考虑。看到整数累加，通常会引起做量化同学的警惕。累加结果（包括中间结果）会被存到硬件的累加器（$acc$）中。而累加器位宽（$bit_{acc}$）通常都是固定的。位宽固定，累加的上限也就确定，令其为 $Q_{acc}^{max} = 2^{bit_{acc} - 1} - 1$，在 softmax 这个场景中，甚至可以用无符号表示，因为 $T$ 肯定大于零。$T$ 的每个元素值大小是千变万化的，$T$ 的元素个数 $n$ 是可以确定的。根据 $Q_{acc}^{max}$ 和 $n$，可以作以下约束，
 
 $$
-\max_{i \in n}(T_i) * n \le acc_{qmax}
+\max_{i \in n}(T_i) n \le Q_{acc}^{max}
 $$
 
 $$
-\max_{i \in n}(T_i) \le \frac {acc_{qmax}} {n}
+\max_{i \in n}(T_i) \le \frac {Q_{acc}^{max}} {n}
 $$
 
 为了充分利用 $acc$ 的每个 $bit$ 位，令
 
 $$
-\max_{i \in n}(T_i) =\left \lfloor  \frac {acc_{qmax}} {n} \right \rfloor
+\max_{i \in n}(T_i) =\left \lfloor  \frac {Q_{acc}^{max}} {n} \right \rfloor
 $$
 
 由前面的推理 $t_i \in (0, 1)$，根据计算量化公式，$scale = \frac {F_{max}} {Q_{max}}$，可得，
@@ -202,39 +201,77 @@ $$
 scale_t = \frac {\max_{i \in n}(t_i)} {\max_{i \in n}(T_i)} = \frac {1} {\max_{i \in n}(T_i)}
 $$
 
-就此确定分母中 T 的量化缩放因子 scale_t = 1 / max(T)。并且 1 / max(T) 是允许的最小 scale_t，如果 scale_t 大于 1 / max(T)，就存在 acc 溢出的风险。
+就此确定分母中 $T$ 的量化缩放因子 $scale_t = \frac {1} {\max_{i \in n}T_i}$。并且 $\frac {1} {\max_{i \in n}T_i}$ 是允许的最小 $scale_t$，如果 $scale_t > \frac {1} {\max_{i \in n}T_i}$，就存在 $acc$ 溢出的风险。
+
 综上，
-scale_t = 1 / max(T) = 1 / (acc_{qmax} // n)
-所以只要确定 acc 的位宽 acc_quant_bit（用来确定 acc_quant_max）和元素个数 element_number，就能确定分母中 T 的缩放因子 scale_t。至此的公式推演可以支撑实现 X -> T 的查表实现。
+
+$$
+scale_t = \frac {1} {\max_{i \in n}T_i} = \frac {1} {\left \lfloor  \frac {Q_{acc}^{max}} {n} \right \rfloor}
+$$
+
+所以只要确定 $acc$ 的位宽 $bit_{acc}$（用来确定 $Q_{acc}^{max}$）和元素个数 $n$，就能确定分母中 $T$ 的缩放因子 $scale_t$。至此的公式推演可以支撑实现 X -> T 的查表实现。
 
 #### 确定分子映射表
 
-首先回到简化公式，y = T / sum(T)，带入 y 量化表达 y = scale_y *Y 得，
-y = scale_y* Y = T / sum(T)
-Y = (T / scale_y) / sum(T)
-因为 y in (0, 1)，所以 scale_y < 1。如果 T / scale_y 只保留整数相当于又做了一次量化（第一次是 T = t_i / scale_t）。于是需要确定用多大位宽来存放 T / scale_y，可以保证不发生溢出问题。
-因为，
-max(y) in [1 / n, 1)，当 n = 1 时，max(y) = 1
-即，
-min(max(y)) = 1 / n
-再结合 scale_y = y / Y 和 max(Y) = output_quant_max，可得，
-min(scale_y) = min(max(y)) / max(Y) = 1 / (n *output_quant_max)
+首先回到简化公式，$y_i = \frac {T_i} {\sum_{i \in n} T_i}$，带入量化表达 $y_i = scale_y Y_i$ 得，
+
+$$
+y_i = scale_y Y_i = \frac {T_i} {\sum_{i \in n} T_i}
+$$
+
+$$
+Y_i = \frac { \frac {T_i} {scale_y} } {\sum_{i \in n} T_i}
+$$
+
+因为 $y_i \in (0, 1)$，所以 $scale_y < 1$。如果 $\frac {T_i} {scale_y}$ 只保留整数相当于又做了一次量化（第一次是 $T_i = \frac {t_i} {scale_t}$）。于是需要确定用多大位宽来存放 $\frac {T_i} {scale_y}$，可以保证不发生溢出问题。
+
+因为 $\max_{i \in n}y \in [\frac {1} {n}, 1)$ 当 $n = 1$ 时, $\max_{i \in n} y_i = 1$ 即 $\min(\max_{i \in n}y_i) = \frac {1} {n}$
+
+再结合 $scale_y = \frac { \max_{i \in n} y} {Q_{output}^{max}}$ 可得，
+
+$$
+\min(scale_y) = \frac {\min(\max_{i \in n}y)} {Q_{output}^{max}} = \frac {1} {n Q_{output}^{max}}
+$$
+
 于是，
-max(T / scale_y) = max(T) / min(scale_y) = acc_quant_max* output_quant_max
-等式的推论是，分子 T / scale_y 需要位宽 bit_{acc} + output_quant_bit 来存放，这样可以完全避免溢出问题。
-再将之前的等式重新梳理一下，
-Y = (T / scale_y) / sum(T) = (t_i / (scale_t * scale_y)) / sum(T) = P / sum(T)
-其中 P = t_i / (scale_t * scale_y)，也就是将两次量化等效为一次。说等效其实不合适，因为两次并一次，可以减少一次 round 误差。至此的公式推演可以支撑实现 X -> P 的查表实现。
+
+$$
+\max( \frac {T_i} {scale_y}) = \frac {\max_{i \in n}T_i} {\min(scale_y)} = \frac {Q_{acc}^{max}} {n} n Q_{output}^{max} = Q_{acc}^{max} Q_{output}^{max}
+$$
+
+等式的推论是，分子 $\frac {T_i} {scale_y}$ 需要位宽 $bit_{acc} + bit_{output}$ 来存放，这样可以完全避免溢出问题。将之前的等式重新梳理一下，
+
+$$
+Y_i = \frac { \frac {T_i} {scale_y}} {\sum_{i}^{n}T_i} = \frac { \frac {t_i} {scale_t scale_y}} {\sum_{i}^{n} T_i} = \frac {P_i} {\sum_{i}^{n}T_i}
+$$
+
+其中 $P_i = \frac {t_i} {scale_t scale_y}$，也就是将两次量化等效为一次。说等效其实不合适，因为两次并一次，可以减少一次 round 误差。至此的公式推演可以支撑实现 X -> P 的查表实现。
 
 ### 功能代码
 
 根据等式关系，
-Y = P / sum(T)
-P = int(t_i / (scale_t * sy))
-T = int(t_i / scale_t)
-t_i = exp(scale_x(X - quant_max))
-scale_t = 1 / max(T) = 1 / (acc_quant_max // n)
-可以设计两个映射表分别是 X -> T 和 X -> P，其中 X 用 input_quant_bit 位宽存放，T 与 acc 保持一致用 bit_{acc} 位宽存放，P 用 bit_{acc} + output_quant_bit 位宽存放。
+
+$$
+Y_i = \frac {P_i} {\sum_{i}^{n}T_i}
+$$
+
+$$
+P_i = \left \lfloor \frac {t_i} {scale_t scale_y} \right \rfloor
+$$
+
+$$
+T_i = \left \lfloor \frac {t_i} {scale_t} \right \rfloor
+$$
+
+$$
+t_i = e^{scale_x (X_i - Q_{input}^{max})}
+$$
+
+$$
+scale_t = \frac {1} {\max_{i \in n} T_i} = \frac {1} {\left \lfloor \frac {Q_{acc}^{max}} {n} \right \rfloor}
+$$
+
+可以设计两个映射表分别是 X -> T 和 X -> P，其中 $X$ 用 $bit_{input}$ 位宽存放，$T$ 与 $acc$ 保持一致用 $bit_{acc}$ 位宽存放，$P$ 用 $bit_{acc} + bit_{output}$ 位宽存放。
 
 代码地址
 
@@ -339,7 +376,7 @@ def _check_symmetric_quant_table_softmax(dim_len_range: Tuple[int],
     return True
 ```
 
-备注：测试代码中未添加 bit_{acc} 的遍历测试。经手动调节 bit_{acc} 大小发现，acc_quant_bit 越大，误差越小。acc_quant_bit 较小时，误差很大，测试无法通过。acc_quant_bit 足够大时，误差可以控制在允许范围内，测试能通过。此时 bit_{acc} 再增大会发现，绝对值误差为 1 的数量会逐渐减少。有兴趣的朋友也可以试一下。究其原因，是 bit_{acc} 位宽增大，保留了更多原来浮点数末尾的小数信息，保留的越多累加后的误差也就越小。
+备注：测试代码中未添加 $bit_{acc}$ 的遍历测试。经手动调节 $bit_{acc}$ 大小发现，$bit_{acc}$ 越大，误差越小。$bit_{acc}$ 较小时，误差很大，测试无法通过。$bit_{acc}$ 足够大时，误差可以控制在允许范围内，测试能通过。此时 $bit_{acc}$ 再增大会发现，绝对值误差为 1 的数量会逐渐减少。有兴趣的朋友也可以试一下。究其原因，是 $bit_{acc}$ 位宽增大，保留了更多原来浮点数末尾的小数信息，保留的越多累加后的误差也就越小。
 
 ### 内存开销
 
@@ -347,30 +384,33 @@ def _check_symmetric_quant_table_softmax(dim_len_range: Tuple[int],
 
 相较普通的浮点计算，Softmax 的量化查表实现，需要储存两张映射表。按照设定，
 
-* 量化输入比特位数：input_quant_bit
-* 累加器比特位数：acc_quant_bit
-* 量化输出比特位数：output_quant_bit
+* 量化输入比特位数：$bit_{input}$
+* 累加器比特位数：$bit_{acc}$
+* 量化输出比特位数：$bit_{output}$
+
 可以得到，
-* X -> T 映射表内存大小计算公式，2^input_quant_bit *bit_{acc} (bits) = 2^input_quant_bit* bit_{acc} / 8 (Bytes)
-* X -> P 映射表内存大小计算公式，2^input_quant_bit *(bit_{acc} + output_quant_bit) (bits)
-= 2^input_quant_bit* (bit_{acc} + output_quant_bit) / 8 (Bytes)
+
+* X -> T 映射表内存大小计算公式，$2^{bit_{input}} bit_{acc} (bits) = \frac {2^{bit_{input}} bit_{acc}} {8} (Bytes)$
+* X -> P 映射表内存大小计算公式，$2^{bit_{input}} (bit_{acc} + bit_{output}) (bits)
+= \frac {2^{bit_{input}} (bit_{acc} + bit_{output})} {8} (Bytes)$
 
 带入具体参数的具象感受如下表所示，
 
-input_quant_bit bit_{acc} output_quant_bit X -> T(Bytes) X -> P(Bytes) 总和(Bytes)
-8 16 8 512 768 1280
-8 32 8 1024 1280 2304
-4 16 4 32 40 72
+| $bit_{input}$ | $bit_{acc}$ | $bit_{output}$ | X -> T(Bytes) | X -> P(Bytes) | 总和(Bytes) |
+| ------------- | ----------- | -------------- | ------------- | ------------- | ----------- |
+| 8             | 16          | 8              | 512           | 768           | 1280        |
+| 8             | 32          | 8              | 1024          | 1280          | 2304        |
+| 4             | 16          | 4              | 32            | 40            | 72          |
 
 #### 中间量
 
-按照 Python 代码实现流程，会有两个中间变量分子 P 和分母 sum(T)。抛开 Python 的代码实现（Python 代码只体现了量化的实现），转而思考 C/C++ 的代码优化（或者硬件设计的优化）。
+按照 Python 代码实现流程，会有两个中间变量分子 $P$ 和分母 $\sum_{i}^{n}T_i$。抛开 Python 的代码实现（Python 代码只体现了量化的实现），转而思考 C/C++ 的代码优化（或者硬件设计的优化）。
 
-* 首先讨论 sum(T) 的优化过程。通常的做法是，在求和前将累加器清零。逐个元素查表得到 T[i] 并累加到累加器上。这样无需提供暂存 tensor。
-* 再来讨论 P 的优化过程。得到 sum(T) 之后，逐个元素查表得到 P[i] 并计算 P[i] / sum(T) = Y[i]。这样也无需提供暂存 tensor。
+* 首先讨论 $\sum_{i}^{n}T_i$ 的优化过程。通常的做法是，在求和前将累加器清零。逐个元素查表得到 $T_i$ 并累加到累加器上。这样无需提供暂存 tensor。
+* 再来讨论 $P$ 的优化过程。得到 $\sum_{i}^{n}T_i$ 之后，逐个元素查表得到 $P_i$ 并计算 $\frac {P_i} {\sum_{i}^{n}T_i} = Y_i$。这样也无需提供暂存 tensor。
 
 综上所述，无需为中间量提供大内存。
 
 ### 小结
 
-量化 Softmax 带来额外的内存消耗来自两个映射表，且内存消耗在可接受范围内（以 input_quant_bit = 8，acc_quant_bit = 32，output_quant_bit = 8 为例，相当于引入了一个大小为 [N, C, H, W] = [64, 32, 3, 3] 的 int8 卷积核）。
+量化 Softmax 带来额外的内存消耗来自两个映射表，且内存消耗在可接受范围内（以 $bit_{input} = 8,bit_{acc} = 32,bit_{output} = 8$ 为例，相当于引入了一个大小为 [N, C, H, W] = [64, 32, 3, 3] 的 int8 卷积核）。
