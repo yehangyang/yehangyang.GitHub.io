@@ -11,7 +11,7 @@
 
 而在模型设计中，线性层的后面通常会跟一个非线性层（也就是所谓的激活函数）。例如现在有下图（a）这样一个模型。如果只能对线性层做量化，那么只能得到下图（b）这样的效果，量化和非量化算子之间会穿插很多 Q/DQ 节点（也就是量化和浮点间的转化）。而我们希望看到下图（c）的效果，也就是希望激活函数也能进行量化计算。
 
-![half quantization v.s. full quantizaiton](activation_function_quantization_via_table/half_vs_full.drawio.svg)
+![half quantization v.s. full quantizaiton](table_based_quant/half_vs_full.drawio.svg)
 
 观察上图（b），nonlinear 的输出会再次被量化，作为下一个量化 linear 的输入。细想，量化其实同时在边界上和数量上限制了表示范围。以 int8 量化为例，linear 输出的 $X \in [-128, +127]$（边界限制），可由 256 个数表示（数量限制）。此时如果 nonlinear 由浮点实现，则 $X$ 需要被反量化（$x' = scale_x · X$），才能作为浮点 nonlinear 的输入。请不要以为做了反量化变成浮点数了，$x'$ 的边界和数量限制就解除了，它仍旧被限制在 $[-128scale_x, +127scale_x]$，数值表示数量为 256 不变（并且可以和反量化前一一对应）。在浮点域做完 nonlinear 之后，$y = nonlinear(x')$，限制仍然存在（仍然保持一一对应）。为了能成为下一个量化 linear 的输入，需要对 $y$ 量化，$Y = [\frac {y} {scale_y}]$，限制依旧在（一一对应）。费劲周章，最后得到的还是 256 种数值结果，所以我们为什么不借助“一一对应”的传递性，用查表法来得到 nonlinear 的量化结果呢？
 
@@ -19,7 +19,7 @@
 
 正如《动机》章节描述，我们将用查表法来实现非线性激活函数的量化。量化非线性激活函数是为了实现图中（c）的 nonlinear(int8) 等效替换（b）的 DQ -> nonlinear(float) -> Q 过程。
 
-![wanted quantization look like](activation_function_quantization_via_table/wanted_quantization.drawio.svg)
+![wanted quantization look like](table_based_quant/wanted_quantization.drawio.svg)
 
 ## 测试代码
 
@@ -67,7 +67,7 @@ def __check_symmetric_quant(quant_cls: _SymmetryQuant, float_func: Callable, inp
 代码地址
 功能实现的关键是生成查表法用到的映射表。以对称量化为例，获取映射表 table 的流程如下图所示。
 
-![table based quantization workflow](activation_function_quantization_via_table/quantization_workflow.drawio.svg)
+![table based quantization workflow](table_based_quant/quantization_workflow.drawio.svg)
 
 代码实现如下面代码块所示，其中：
 
