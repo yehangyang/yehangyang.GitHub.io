@@ -49,3 +49,6 @@ nav:
     - NN Quantization:
           - Table based Quantization: nn_quant/table_based_quant.md
           - Appendix: nn_quant/appendix.md
+    - LLM:
+          - 训练/推理优化:
+                - KV cache: lm/kv_cache/kv_cache.md
