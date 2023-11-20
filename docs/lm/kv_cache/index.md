@@ -3,13 +3,21 @@
 ## 结论
 
 1. 应用在什么地方?
+
     a. 优化基于 decoder 结构的 LM(i.e., Language Model) 模型中 attention 和 FFN 的推理效率
+
 2. 暂存了什么内容?
+
     a. 历史 token 对应的 K/V tensor
+
+
 3. 节省了什么时间?
+
     a. 计算历史 token 对应的 K/V tensor 的时间
     b. 计算历史 token 对应的 FFN 的时间
+
 4. 能够工作的前提条件(注意点)
+   
     a. 当前 token 只能看到历史 token 信息不能看到未来 token 信息
     b. 计算 attention 时, scale 系数是常数(e.g., $\sqrt{d_k}$ 其中 $d_k$ 是 Q/K 的特征维度, 模型完成设计即确定, 注意不是 token 数量)
 
