@@ -52,5 +52,7 @@ nav:
     - LLM:
           - 训练/推理优化:
                 - KV cache: lm/kv_cache/index.md
+    - 训练:
+          - 梯度更新: train/update_gradient.md
     - 随记:
           - 浮点数 v.s. 定点数: notes/float_vs_quant.md
