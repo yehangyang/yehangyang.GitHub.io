@@ -1,1 +1,1 @@
-[[AI 在干什么？]]
+[[what_is_ai_doing]]
